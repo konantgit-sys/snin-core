@@ -24,8 +24,6 @@ import os
 import sys
 from collections import defaultdict
 
-import httpx
-
 RELAY_MESH = "http://localhost:9907"
 SMART_ROUTER_HOST = "127.0.0.1"
 SMART_ROUTER_PORT = 9932
@@ -57,15 +55,6 @@ class RouteEngine:
             "flushes": 0,
             "ws_flushes": 0,
         }
-
-    async def _get_http(self):
-        """Ленивая инициализация httpx клиента (один на всё время жизни)."""
-        if self._http is None or self._http.is_closed:
-            self._http = httpx.AsyncClient(
-                timeout=httpx.Timeout(5.0, connect=2.0),
-                limits=httpx.Limits(max_keepalive_connections=4, max_connections=8),
-            )
-        return self._http
 
     async def _get_http(self):
         """Ленивая инициализация httpx клиента (один на всё время жизни)."""
