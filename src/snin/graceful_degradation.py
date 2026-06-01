@@ -41,7 +41,8 @@ REDIS_HOST = "127.0.0.1"
 REDIS_PORT = 6379
 
 # Статус файл (читается supervisor)
-DEGRADATION_STATUS_FILE = "/home/agent/data/sites/snin-hub/degradation_status.json"
+DEGRADATION_STATUS_FILE = os.environ.get("SNIN_DEG_STATUS_FILE",
+    os.path.expanduser("~/.snin/data/degradation_status.json"))
 
 
 def _port_open(host: str = "127.0.0.1", port: int = 0, timeout: float = 2) -> bool:
@@ -245,7 +246,7 @@ class GracefulDegradation:
     
     def _update_global_state(self):
         """Обновить глобальный статус на основе состояния компонентов."""
-        bridge_dead = NOSTR_BRIDGE_PORTS - self.get_alive_bridge_count()  # type: ignore
+        NOSTR_BRIDGE_PORTS - self.get_alive_bridge_count()  # type: ignore
         
         if (not self._redis_alive and not self._gateway_alive 
             and self.get_alive_bridge_count() == 0):

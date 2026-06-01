@@ -22,8 +22,12 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Dict, List, Optional, Tuple
 
-LOG_DIR = "/home/agent/data/logs"
-os.makedirs(LOG_DIR, exist_ok=True)
+LOG_DIR = os.environ.get("SNIN_LOG_DIR", os.path.expanduser("~/.snin/logs"))
+try:
+    os.makedirs(LOG_DIR, exist_ok=True)
+except (OSError, PermissionError):
+    LOG_DIR = "/tmp/snin/logs"
+    os.makedirs(LOG_DIR, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -35,7 +39,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger("CircuitBreaker")
 
-CB_STATUS_FILE = "/home/agent/data/sites/relay-mesh/circuit_breaker_status.json"
+CB_STATUS_FILE = os.environ.get("SNIN_CB_STATUS_FILE",
+    "/tmp/snin/data/circuit_breaker_status.json")
 
 class CircuitState(Enum):
     CLOSED = "closed"      # Нормально, запросы проходят
@@ -175,7 +180,7 @@ class CircuitBreakerManager:
             return False, error
 
         try:
-            result = callback()  # Пытаемся выполнить запрос
+            callback()  # Пытаемся выполнить запрос
             channel.record_success()
             return True, None
         except Exception as e:

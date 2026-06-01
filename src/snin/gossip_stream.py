@@ -11,7 +11,12 @@ Writer pool: 3 воркера на соединение (основной + batc
 import asyncio
 # import uvloop (disabled)
 # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-import json, time, os, sys, socket, random
+import json
+import time
+import os
+import sys
+import socket
+import random
 from collections import defaultdict
 
 from snin.ttl_cache import TTLCache
@@ -186,7 +191,7 @@ class WriterPool:
                     self.stats["sent"] += 1
                     self.stats["bytes_sent"] += len(payload)
                     return True
-                except (BrokenPipeError, ConnectionResetError, OSError, asyncio.TimeoutError) as e:
+                except (BrokenPipeError, ConnectionResetError, OSError, asyncio.TimeoutError):
                     self.stats["errors"] += 1
                     self.writers[1] = None
                     await self.reconnect()
@@ -208,7 +213,7 @@ class WriterPool:
                     self.stats["sent"] += 1
                     self.stats["bytes_sent"] += len(payload)
                     return True
-                except (BrokenPipeError, ConnectionResetError, OSError, asyncio.TimeoutError) as e:
+                except (BrokenPipeError, ConnectionResetError, OSError, asyncio.TimeoutError):
                     self.stats["errors"] += 1
                     self.writers[idx] = None
                     # Continue to next writer
@@ -354,7 +359,7 @@ class GossipStream:
                     # Входящие данные
                     content = msg.get("content", {})
                     nonce = content.get("nonce", "")
-                    target_pubkey = content.get("target_pubkey", "")
+                    content.get("target_pubkey", "")
                     payload = content.get("payload", {})
 
                     # Dedup по nonce (TTLCache: add = True если новый, False если дубликат)
@@ -456,7 +461,7 @@ class GossipStream:
             if ok:
                 self.stats["data_sent"] += 1
             return ok
-        except (OSError, asyncio.TimeoutError, ConnectionRefusedError, ConnectionResetError) as e:
+        except (OSError, asyncio.TimeoutError, ConnectionRefusedError, ConnectionResetError):
             self.stats["errors"] += 1
             return False
 
@@ -515,7 +520,7 @@ class GossipStream:
         if self._server:
             self._server.close()
             await self._server.wait_closed()
-        print(f"[GossipStream] 🛑 Stopped")
+        print("[GossipStream] 🛑 Stopped")
 
     def get_stats(self) -> str:
         return (
@@ -557,6 +562,6 @@ async def main():
 
 if __name__ == "__main__":
     print(f"\n{'='*50}")
-    print(f"  GossipStream V8 — Data Channel")
+    print("  GossipStream V8 — Data Channel")
     print(f"{'='*50}\n")
     asyncio.run(main())

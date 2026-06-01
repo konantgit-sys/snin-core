@@ -9,7 +9,9 @@
 Генерируются автоматически при load_or_create_identity().
 """
 
-import base64, os, json
+import base64
+import os
+import json
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM

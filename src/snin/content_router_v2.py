@@ -5,7 +5,13 @@
 import asyncio
 # import uvloop (disabled)
 # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
-import json, time, os, sys, hashlib, math, socket
+import json
+import time
+import os
+import sys
+import hashlib
+import math
+import socket
 from collections import defaultdict, deque
 
 # ─── Bloom Filter (pure Python, zero false negatives, 1% FP rate) ──────────
@@ -493,9 +499,9 @@ async def init_redis():
                                       socket_connect_timeout=1, socket_timeout=1,
                                       decode_responses=True)
         await REDIS_DEDUP.ping()
-        print(f"[ContentRouter] Redis connected ✅")
+        print("[ContentRouter] Redis connected ✅")
     except Exception:
-        print(f"[ContentRouter] Redis unavailable — in-memory only")
+        print("[ContentRouter] Redis unavailable — in-memory only")
 
 # Redis (optional — без Redis CR работает на in-memory dedup)
 REDIS_DEDUP = None
@@ -647,7 +653,7 @@ class ContentRouterV2:
             except: content = {}
         agent_id = content.get("from", "?") if isinstance(content, dict) else "?"
         seq = content.get("seq", 0) if isinstance(content, dict) else 0
-        payload = content if isinstance(content, dict) else {}
+        content if isinstance(content, dict) else {}
         
         event_id = event.get("id", "")
         if not event_id:
@@ -804,8 +810,8 @@ class ContentRouterV2:
         print(f"[ContentRouter] Unix socket {UNIX_CR_SOCK}")
         
         server = await asyncio.start_server(self.handle_event, "127.0.0.1", self.port)
-        print(f"[ContentRouter] Phase 2 — Bloom+Redis hybrid dedup")
-        print(f"[ContentRouter] Phase 3 — Unix sockets")
+        print("[ContentRouter] Phase 2 — Bloom+Redis hybrid dedup")
+        print("[ContentRouter] Phase 3 — Unix sockets")
         print(f"[ContentRouter] Listening on TCP {self.port}")
         print(f"[ContentRouter] Writers: {N_WRITERS}")
         async with server, unix_server:

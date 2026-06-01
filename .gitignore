@@ -6,3 +6,9 @@ build/
 .env
 *.log
 logs/
+.ruff_cache/
+.pytest_cache/
+*.pid
+*.swp
+*.swo
+.DS_Store

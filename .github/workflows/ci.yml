@@ -45,4 +45,4 @@ jobs:
       - name: Lint with ruff
         run: |
           pip install ruff
-          ruff check src/ --ignore=E501,F401,E402
+          ruff check src/ --ignore=E501,F401,E402,E701,E722

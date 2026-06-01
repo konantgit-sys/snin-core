@@ -42,7 +42,6 @@ _ws_conn.Connection.connection_lost = _ws_safe_connection_lost
 
 import websockets
 
-sys.path.insert(0, "/home/agent/data/sites/relay-mesh")
 
 from snin.ttl_cache import TTLCache
 from snin.cpu_worker import hash_sha256_async, sign_event_full_async
@@ -63,7 +62,8 @@ SMART_ROUTER_PORT = 9932
 GATEWAY_PORT = 9941 + SHARD_ID
 
 # Nostr ключи агентов для подписи (берём из agents.json)
-AGENTS_FILE = "/home/agent/data/sites/relay-mesh/agents.json"
+AGENTS_FILE = os.environ.get("SNIN_AGENTS_FILE",
+    os.path.expanduser("~/.snin/data/agents.json"))
 
 # Наши релеи для публикации (NIP-65) — один на шард
 _OUR_RELAYS_ALL = [
@@ -304,7 +304,8 @@ def make_relay_list_event(pubkey_hex: str, privkey_hex: str,
 # ═══════════════════════════════════════════════════════════════
 
 # ── Сохранение discovered релеев для Health Daemon ──
-_DISCOVERED_FILE = "/home/agent/data/sites/relay-mesh/logs/discovered_relays.json"
+_DISCOVERED_FILE = os.environ.get("SNIN_DISCOVERED_RELAYS",
+    os.path.expanduser("~/.snin/data/discovered_relays.json"))
 
 def _save_discovered_relays(relays: set):
     try:
@@ -611,7 +612,7 @@ class NostrRelayClient:
                     "retries": 0,
                 }
             return True
-        except Exception as e:
+        except Exception:
             stats["errors"] += 1
             self.cb.record_failure()
             return False
@@ -638,7 +639,7 @@ class NostrRelayClient:
                         "retries": self._pending_oks.get(event_id, {}).get("retries", 0),
                     }
                 retried += 1
-            except Exception as e:
+            except Exception:
                 stats["errors"] += 1
                 break
         if retried:
@@ -735,27 +736,27 @@ class NostrBridge:
     
     async def _sr_reconnect_loop(self):
         """Фоновое переподключение к SR. Никогда не завершается — держит NB живым."""
-        print(f"[Bridge] 🔄 SR reconnect loop started (retry every 5s)")
+        print("[Bridge] 🔄 SR reconnect loop started (retry every 5s)")
         while self._running:
             if not self.sr_connected:
                 ok = await self.connect_sr()
                 if ok:
-                    print(f"[Bridge] ✅ SR reconnected in background")
+                    print("[Bridge] ✅ SR reconnected in background")
                     # Запускаем listen_sr если ещё не запущен
                     if self._sr_pending_listener and self._sr_listener_task is None:
                         self._sr_listener_task = asyncio.create_task(self.listen_sr())
                         self._sr_pending_listener = False
             await asyncio.sleep(5)
-        print(f"[Bridge] ⏹ SR reconnect loop ended")
+        print("[Bridge] ⏹ SR reconnect loop ended")
     
     async def listen_sr(self):
         """Слушать mesh-события из SmartRouter и публиковать в Nostr."""
-        print(f"[Bridge] 📡 Listening mesh events → Nostr")
+        print("[Bridge] 📡 Listening mesh events → Nostr")
         
         while self._running:
             # Если не подключены — переподключаемся
             if not self.sr_connected:
-                print(f"[Bridge] 🔄 Reconnecting to SmartRouter...")
+                print("[Bridge] 🔄 Reconnecting to SmartRouter...")
                 ok = await self.connect_sr()
                 if not ok:
                     await asyncio.sleep(5)
@@ -809,7 +810,7 @@ class NostrBridge:
                 continue
             except (BrokenPipeError, ConnectionResetError):
                 self.sr_connected = False
-                print(f"[Bridge] ⚠️ SR connection lost, reconnecting...")
+                print("[Bridge] ⚠️ SR connection lost, reconnecting...")
                 continue
             except ValueError as e:
                 print(f"[Bridge] ⚠️ SR listener: {e}")
@@ -1006,7 +1007,7 @@ class NostrBridge:
     async def start(self):
         """Запустить мост: подключиться к SR и Nostr релеям."""
         print(f"\n{'='*50}")
-        print(f"  SNIN Nostr ↔ Mesh Bridge")
+        print("  SNIN Nostr ↔ Mesh Bridge")
         print(f"{'='*50}")
         
         self._running = True
@@ -1029,7 +1030,7 @@ class NostrBridge:
         print(f"\n[Bridge] 🔌 Connecting to {len(SCAN_RELAYS)} Nostr relays...")
         for url in SCAN_RELAYS:
             client = NostrRelayClient(url, self)
-            ok = await client.connect()
+            await client.connect()
             self.clients.append(client)
             await asyncio.sleep(0.1)  # небольшая задержка между подключениями
         
@@ -1037,7 +1038,7 @@ class NostrBridge:
         print(f"\n[Bridge] ✅ {connected}/{len(self.clients)} relays connected")
         
         # 4. Запускаем фоновые задачи
-        print(f"[Bridge] 🔄 Starting background loops...")
+        print("[Bridge] 🔄 Starting background loops...")
         
         # Слушаем Nostr события от каждого релея
         nostr_tasks = [asyncio.create_task(client.listen()) for client in self.clients]
@@ -1159,7 +1160,7 @@ class NostrBridge:
                         stats["mesh_to_nostr"] += 1
                         print(f"[GW] ✅ queued for Nostr: {content[:60]}")
                     else:
-                        print(f"[GW] ⚠️ empty content in kind:39002")
+                        print("[GW] ⚠️ empty content in kind:39002")
                 else:
                     # unknown kind — тихо пропускаем, не спамим в логи
                     stats["unknown_kind"] = stats.get("unknown_kind", 0) + 1

@@ -17,7 +17,6 @@ import time
 import hashlib
 from collections import defaultdict
 
-sys.path.insert(0, "/home/agent/data/sites/relay-mesh")
 from snin.cpu_worker import make_nostr_id_async
 
 # ─── Настройки ──────────────────────────────────────────────────────────
@@ -146,7 +145,7 @@ class TCPGateway:
                 delay = min(0.5 * (2 ** attempt), 30)  # 0.5, 1, 2, 4, 8, 16, 30...
                 print(f"[TCPGateway] ⏳ SR connect attempt {attempt+1}/10, retry in {delay:.0f}s...")
                 await asyncio.sleep(delay)
-        print(f"[TCPGateway] ❌ Cannot connect to Smart Router after 10 attempts")
+        print("[TCPGateway] ❌ Cannot connect to Smart Router after 10 attempts")
         return False
 
     async def send_to_sr(self, event: dict):
@@ -164,7 +163,7 @@ class TCPGateway:
             self.sr_connected = False
             self.sr_writer = None
             self.stats["sr_errors"] += 1
-            print(f"[TCPGateway] ⚠️ Lost connection to SR, reconnecting...")
+            print("[TCPGateway] ⚠️ Lost connection to SR, reconnecting...")
             asyncio.create_task(self.connect_sr())
             return False
 
@@ -432,7 +431,7 @@ async def print_stats(tcp_gw: TCPGateway, nostr_gw: NostrGateway):
         elapsed = int(time.time() - start_time)
         print(f"\n[Gateway] {'='*50}")
         print(f"[Gateway] Uptime: {elapsed}s")
-        print(f"[Gateway] TCP Gateway:")
+        print("[Gateway] TCP Gateway:")
         print(f"  connections: {tcp_gw.stats['connections']} | "
               f"current: {tcp_gw.stats['clients']} | "
               f"received: {tcp_gw.stats['received']} | "
@@ -441,7 +440,7 @@ async def print_stats(tcp_gw: TCPGateway, nostr_gw: NostrGateway):
         print(f"  kind:1 forwarded: {tcp_gw.stats['kind1_forwarded']} | "
               f"bad JSON: {tcp_gw.stats['bad_json']} | "
               f"SR errors: {tcp_gw.stats['sr_errors']}")
-        print(f"[Gateway] Nostr Gateway:")
+        print("[Gateway] Nostr Gateway:")
         print(f"  events: {nostr_gw.stats['nostr_events']} | "
               f"forwarded: {nostr_gw.stats['forwarded']} | "
               f"relays: {len(NOSTR_RELAYS)}")

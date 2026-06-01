@@ -35,13 +35,19 @@ import os
 import sys
 import hashlib
 import random
+
+# Redis-based Circuit Breaker keys (used by cb_* async functions)
+CB_INCIDENT_KEY = "cb:incidents:{0}:{1}"
+CB_INCIDENT_WINDOW = 60
+CB_INCIDENT_LIMIT = 3
+CB_BLOCKED_KEY = "cb:blocked:{0}"
+CB_BLOCK_TTL = 30
 from collections import defaultdict, deque
 
 from snin.gossip_stream import GossipStream
 from snin.graceful_degradation import GracefulDegradation
 
 # Level 2: CPU-bound crypto в ProcessPool
-sys.path.insert(0, "/home/agent/data/sites/relay-mesh")
 from snin.cpu_worker import verify_ed25519_processpool_async, shutdown_pools
 
 # ═══ Фаза 1: Reputation-weighted routing ═══
@@ -143,8 +149,9 @@ LISTEN_HOST = "0.0.0.0"
 LISTEN_PORT = 9932
 
 # Адреса каналов
-CR_HOST, CR_PORT = "127.0.0.1", 9920
-NOSTR_GW_HOST = "127.0.0.1"
+CR_HOST = os.environ.get("SNIN_CR_HOST", "127.0.0.1")
+CR_PORT = int(os.environ.get("SNIN_CR_PORT", "9920"))
+NOSTR_GW_HOST = os.environ.get("SNIN_NOSTR_GW_HOST", "127.0.0.1")
 NOSTR_GW_PORTS = [9941, 9942, 9943, 9944, 9945]  # 5 bridge shards
 GOSSIP_PORTS = [9100, 9101, 9102, 9103, 9104]
 CR_V2_PORT = 9920  # Content Router v2
@@ -228,7 +235,10 @@ async def aredis():
     if REDIS_CLIENT is None:
         try:
             import redis.asyncio as redis_py
-            REDIS_CLIENT = redis_py.Redis(host='localhost', port=6379, db=0,
+            REDIS_HOST = os.environ.get("SNIN_REDIS_HOST", "localhost")
+            REDIS_PORT = int(os.environ.get("SNIN_REDIS_PORT", "6379"))
+            REDIS_DB = int(os.environ.get("SNIN_REDIS_DB", "0"))
+            REDIS_CLIENT = redis_py.Redis(host=REDIS_HOST, port=REDIS_PORT, db=REDIS_DB,
                                           socket_connect_timeout=1, socket_timeout=2,
                                           decode_responses=True)
             await REDIS_CLIENT.ping()
@@ -768,7 +778,7 @@ class SmartRouter:
                 self._nostr_writers[shard_idx] = w
                 print(f"[Router] ✅ nostr shard {shard_idx} reconnected (:{port})")
                 return
-            except (ConnectionRefusedError, OSError, asyncio.TimeoutError) as e:
+            except (ConnectionRefusedError, OSError, asyncio.TimeoutError):
                 await asyncio.sleep(2)
         print(f"[Router] ⚠️ nostr shard {shard_idx} reconnect failed")
         # На месте остаётся None, будет пропущен при записи
@@ -787,7 +797,7 @@ class SmartRouter:
                 self._gossip_writers[shard_idx] = w
                 print(f"[Router] ✅ gossip shard {shard_idx} reconnected")
                 return
-            except (ConnectionRefusedError, OSError, asyncio.TimeoutError) as e:
+            except (ConnectionRefusedError, OSError, asyncio.TimeoutError):
                 await asyncio.sleep(2)
         print(f"[Router] ⚠️ gossip shard {shard_idx} reconnect failed")
         self._gossip_writers[shard_idx] = None
@@ -799,7 +809,7 @@ class SmartRouter:
         После восстановления — отправляет все накопленные сообщения.
         """
         backoff = [1, 2, 4, 8, 15, 30]
-        print(f"[Router] 🔄 Reconnecting mesh (CRV2 Unix socket)...")
+        print("[Router] 🔄 Reconnecting mesh (CRV2 Unix socket)...")
         for attempt, delay in enumerate(backoff):
             try:
                 r, w = await asyncio.wait_for(
@@ -812,13 +822,13 @@ class SmartRouter:
                 self._cb_recovery_count["mesh"] = self._cb_recovery_threshold  # моментальное восстановление
                 if self._cb.is_blocked("mesh"):
                     self._cb._blocked_until.pop("mesh", None)
-                    print(f"[Router] 🩺 CB mesh unblocked on reconnect")
+                    print("[Router] 🩺 CB mesh unblocked on reconnect")
                 # Сбросить накопленные сообщения
                 await self._flush_pending_queue()
                 return
-            except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError) as e:
+            except (FileNotFoundError, ConnectionRefusedError, OSError, asyncio.TimeoutError):
                 if attempt == 0:
-                    print(f"[Router] ⏳ mesh (CRV2) not ready, retrying...")
+                    print("[Router] ⏳ mesh (CRV2) not ready, retrying...")
                 elif attempt < len(backoff) - 1:
                     print(f"[Router] ⏳ mesh retry {attempt + 1}/{len(backoff)} in {delay}s...")
                 await asyncio.sleep(delay)
@@ -944,7 +954,7 @@ class SmartRouter:
                             self._pending_mesh_queue.append(pending_msg)
                             print(f"[Router] 📥 Saved to pending queue ({len(self._pending_mesh_queue)})")
                         else:
-                            print(f"[Router] ⚠️ Pending queue full, dropping message")
+                            print("[Router] ⚠️ Pending queue full, dropping message")
                         asyncio.ensure_future(self._reconnect_mesh())
                 
                 # ═══ Форвард подписчикам (агентам) — ВСЕГДА, не только при успешном drain ═══
@@ -963,7 +973,7 @@ class SmartRouter:
                 print(f"[Router] 🟣 nostr: {len(alive_shards)}/5 shards alive")
                 if not alive_shards:
                     # Попытка переподключить все 5 шардов (асинхронно)
-                    print(f"[Router] 🔴 All nostr shards dead, initiating full reconnect...")
+                    print("[Router] 🔴 All nostr shards dead, initiating full reconnect...")
                     for idx in range(5):
                         asyncio.ensure_future(self._reconnect_nostr_shard(idx))
                     self.stats["chan_fail:nostr"] += 1
@@ -1008,7 +1018,8 @@ class SmartRouter:
                 try:
                     payload_bytes = json.dumps(nostr_msg) + b"\n"
                 except Exception as e:
-                    import traceback, sys
+                    import traceback
+                    import sys
                     tb = "".join(traceback.format_exception(type(e), e, e.__traceback__))
                     print(f"[Router] 🔴 nostr json.dumps CRASHED: {e}\n{tb}")
                     import json as _std_json
@@ -1170,9 +1181,9 @@ class SmartRouter:
                 r = await aredis()
                 if r and to:
                     # DHT lookup: сначала Redis hash, потом старые ключи
-                    agent_data = await r.hget(f"dht:agents", to)
+                    agent_data = await r.hget("dht:agents", to)
                     if not agent_data:
-                        agent_data = await r.hget(f"dht:agents", to[:16])
+                        agent_data = await r.hget("dht:agents", to[:16])
                     if not agent_data:
                         agent_data = await r.get(f"dht:agent:{to[:16]}")
                     if not agent_data:
@@ -1424,7 +1435,7 @@ class SmartRouter:
 
         meta = msg.get("meta", {})
         from_agent = msg.get("from", msg.get("pubkey", "?"))[:16]
-        to_agent = msg.get("to", "broadcast")[:16]
+        msg.get("to", "broadcast")[:16]
         kind = msg.get("kind", 39002)
         priority = meta.get("priority", "normal")
         channel_pref = meta.get("channel", "auto")
@@ -1480,7 +1491,7 @@ class SmartRouter:
         
         # ═══ Фаза 1: Reputation-weighted override ═══
         try:
-            sender_pubkey = event.get("pubkey", "")
+            sender_pubkey = msg.get("pubkey", "")
             if sender_pubkey:
                 rep_weight = _get_reputation_weight(sender_pubkey)
                 if rep_weight < 0.3:
@@ -1505,7 +1516,7 @@ class SmartRouter:
                 print(f"[Router] ⚡ CB mesh blocked, fallback to: {fallbacks}")
             else:
                 channels_to_try = ["mesh"]  # все каналы заблокированы — последняя надежда
-                print(f"[Router] ⚠️ All channels blocked, forcing mesh")
+                print("[Router] ⚠️ All channels blocked, forcing mesh")
         
         # ═══ Вектор 4: kind:30000 → обязательно шлём в ChequeBook ═══
         if kind == 30000 and "chequebook" not in channels_to_try and not self._cb.is_blocked("chequebook"):
@@ -1543,7 +1554,7 @@ class SmartRouter:
 
         # ═══ Content Router мультикаст: все kind дублируются в CR ═══
         if self._cr_v2_writer is None:
-            print(f"[Router] ⚠️ CR v2 writer is None, attempting reconnect...")
+            print("[Router] ⚠️ CR v2 writer is None, attempting reconnect...")
             try:
                 r, w = await asyncio.wait_for(
                     asyncio.open_connection("127.0.0.1", CR_V2_PORT), timeout=1
@@ -1590,7 +1601,7 @@ class SmartRouter:
 
     async def handle_client(self, reader, writer):
         peer = writer.get_extra_info("peername", ("?", 0))
-        addr = f"{peer[0]}:{peer[1]}"
+        f"{peer[0]}:{peer[1]}"
 
         # ═══ Фаза 2: Backpressure ═══
         self._concurrent += 1
@@ -1706,7 +1717,7 @@ class SmartRouter:
             self.stats["client_timeout"] += 1
         except (ConnectionResetError, BrokenPipeError):
             pass
-        except Exception as e:
+        except Exception:
             self.stats["errors"] += 1
         finally:
             # Удаляем подписку этого клиента если была
@@ -1777,7 +1788,7 @@ class SmartRouter:
         r = await aredis()
         n_policies = len(await r.hkeys(POLICY_KEY)) if r else 0
         print(f"[Router]    Policies: {n_policies} rules in Redis")
-        print(f"[Router]    Route-learning: ON")
+        print("[Router]    Route-learning: ON")
         print(f"[Router]    Phase 4: orjson + Health :{HEALTH_PORT}")
 
         async def health_check(reader, writer):
@@ -1900,7 +1911,7 @@ async def print_status(router: SmartRouter):
         print(f"[Router] Fallbacks: {router.stats['fallback_to_mesh']} | "
               f"congestion_reroute: {router.stats['congestion_reroute']} | "
               f"congestion_slow: {router.stats['congestion_slow']}")
-        print(f"[Router] Channel health (last cycle):")
+        print("[Router] Channel health (last cycle):")
         for ch, h in router._channel_health.items():
             total = h["ok"] + h["fail"]
             if total:
@@ -1908,7 +1919,7 @@ async def print_status(router: SmartRouter):
                 print(f"  {ch:8s} ok={h['ok']} fail={h['fail']} avg={h['avg_ms']:.0f}ms {bar}")
             else:
                 print(f"  {ch:8s} — no data")
-        print(f"[Router] Redis delivery stats:")
+        print("[Router] Redis delivery stats:")
         for ch, s in ch_summary.items():
             bar = "█" * max(1, int(s["avg_ms"] / 10)) if s["avg_ms"] else "?"
             print(f"  {ch:8s} → sent={s['sent']} fail={s['failed']} avg={s['avg_ms']}ms {bar}")
@@ -1941,7 +1952,7 @@ async def health_server():
                         "HTTP/1.1 200 OK\r\n"
                         "Content-Type: application/json\r\n"
                         "Connection: close\r\n"
-                        f"Content-Length: 0\r\n\r\n"
+                        "Content-Length: 0\r\n\r\n"
                     ).encode()
                     client_writer.write(response)
                     await client_writer.drain()
@@ -1954,7 +1965,7 @@ async def health_server():
 async def main():
     import sys
     sys.stdout.flush()
-    print(f"[Router] Initializing SmartRouter...")
+    print("[Router] Initializing SmartRouter...")
     sys.stdout.flush()
 
     router = SmartRouter()
@@ -1963,7 +1974,7 @@ async def main():
 
     # Запуск GossipStream (V8 data channel) — OPTIONAL, можно пропустить на отладку
     try:
-        print(f"[Router] Starting GossipStream V8...")
+        print("[Router] Starting GossipStream V8...")
         sys.stdout.flush()
         gs = GossipStream(pubkey="sr_gossip_v8")
         await gs.start_server_async()
@@ -1974,7 +1985,7 @@ async def main():
         print(f"[Router] ⚠️ GossipStream V8: {e}")
         sys.stdout.flush()
 
-    print(f"[Router] Starting main loops...")
+    print("[Router] Starting main loops...")
     sys.stdout.flush()
     try:
         await asyncio.gather(router.run(), print_status(router), router._dht_scan_loop())
@@ -1991,21 +2002,21 @@ if __name__ == "__main__":
     import signal
     
     def _cleanup():
-        print(f"[Router] 🧹 Cleaning up process pools...")
+        print("[Router] 🧹 Cleaning up process pools...")
         shutdown_pools()
-        print(f"[Router] ✅ Pools cleaned")
+        print("[Router] ✅ Pools cleaned")
     
     # Ловим SIGTERM/SIGINT — чистим пулы перед смертью
     signal.signal(signal.SIGTERM, lambda *_: (_cleanup(), sys.exit(0)))
     
-    print(f"[Router] Smart Router v2 — multi-channel, policy + self-learning")
+    print("[Router] Smart Router v2 — multi-channel, policy + self-learning")
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print(f"[Router] Shutdown")
+        print("[Router] Shutdown")
         _cleanup()
     except asyncio.CancelledError:
-        print(f"[Router] Cancelled")
+        print("[Router] Cancelled")
     except Exception as e:
         import traceback
         tb = traceback.format_exc()

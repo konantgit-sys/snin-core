@@ -66,8 +66,8 @@ def _count_gossip_participation(agent_name: str) -> tuple[int, int]:
             try:
                 with open(log_file) as f:
                     content = f.read()
-                ok += content.count(f"✅") + content.count(f"sent") + content.count(agent_name)
-                err += content.count(f"❌") + content.count(f"error") + content.count(f"timeout")
+                ok += content.count("✅") + content.count("sent") + content.count(agent_name)
+                err += content.count("❌") + content.count("error") + content.count("timeout")
             except (FileNotFoundError, OSError):
                 pass
     return ok, err

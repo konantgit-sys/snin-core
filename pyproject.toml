@@ -7,7 +7,7 @@ name = "snin"
 version = "5.0.0.dev1"
 description = "Sovereign Network Intelligence Node — P2P mesh for AI agents"
 readme = "README.md"
-license = "MIT"
+license = {file = "LICENSE"}
 authors = [
     {name = "SNIN Network", email = "snin-network@v2.site"},
 ]
@@ -21,8 +21,11 @@ classifiers = [
     "Topic :: System :: Networking",
     "Topic :: Internet",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
     "Operating System :: POSIX :: Linux",
+    "License :: OSI Approved :: MIT License",
 ]
 requires-python = ">=3.10"
 dependencies = [
@@ -35,10 +38,11 @@ dependencies = [
 ]
 
 [project.urls]
-"Homepage" = "https://snin-network.v2.site"
-"Documentation" = "https://github.com/snin-network/snin-core"
-"Repository" = "https://github.com/snin-network/snin-core"
-"Bug Tracker" = "https://github.com/snin-network/snin-core/issues"
+Homepage = "https://snin-network.v2.site"
+Repository = "https://github.com/snin-network/snin-core"
+Documentation = "https://github.com/snin-network/snin-core"
+Changelog = "https://github.com/snin-network/snin-core/blob/main/CHANGELOG.md"
+Bug_Tracker = "https://github.com/snin-network/snin-core/issues"
 
 [project.optional-dependencies]
 dev = [

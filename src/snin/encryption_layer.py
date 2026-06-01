@@ -24,12 +24,13 @@ import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from urllib.parse import urlparse
 
-sys.path.insert(0, os.path.dirname(__file__))
+# Подключается через snin.mesh_crypto (пакетный импорт)
 from snin.mesh_crypto import encrypt_for_agent, decrypt_from_agent, load_identity
 
-PORT = 9600
-PIDFILE = "/tmp/snin_encryption_layer.pid"
-IDENTITIES_DIR = os.path.join(os.path.dirname(__file__), "identities")
+PORT = int(os.environ.get("SNIN_ENC_PORT", "9600"))
+PIDFILE = os.environ.get("SNIN_ENC_PIDFILE", os.path.expanduser("~/.snin/data/encryption_layer.pid"))
+IDENTITIES_DIR = os.environ.get("SNIN_ENC_IDENTITIES_DIR",
+    os.path.expanduser("~/.snin/identities"))
 
 
 class EncryptionHandler(BaseHTTPRequestHandler):
@@ -213,7 +214,7 @@ def run_server():
         f.write(str(os.getpid()))
     
     print(f"[Encryption Layer] 🚀 L2.5 на :{PORT}")
-    print(f"[Encryption Layer]   Cipher: X25519 + HKDF + AES-256-GCM")
+    print("[Encryption Layer]   Cipher: X25519 + HKDF + AES-256-GCM")
     print(f"[Encryption Layer]   Agents: {len([f for f in os.listdir(IDENTITIES_DIR) if f.endswith('.json')]) if os.path.isdir(IDENTITIES_DIR) else 0}")
     print(f"[Encryption Layer]   PID: {os.getpid()}")
     

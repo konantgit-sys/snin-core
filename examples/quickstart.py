@@ -1,59 +1,78 @@
 #!/usr/bin/env python3
-"""Quickstart: запустить SNIN mesh-ноду и подключить агента."""
+"""Quickstart: SNIN V5 Mesh Fabric — базовые компоненты."""
 import asyncio
-import os
-import sys
+from snin import (
+    SmartRouter,
+    InMemoryCircuitBreaker,
+    DHTNode,
+    TTLCache,
+)
 
-# Добавляем src в путь (для запуска без установки)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from snin.smart_router import SmartRouter
-from snin.external_gateway import AgentGateway
+def demo_circuit_breaker():
+    """Circuit Breaker: 3 инцидента → блокировка канала."""
+    print("=== Circuit Breaker Demo ===")
+    cb = InMemoryCircuitBreaker()
+
+    # Здоровый канал
+    print(f"healthy_channel blocked? {cb.is_blocked('tcp')}")  # False
+
+    # 3 быстрых инцидента
+    for i in range(3):
+        blocked = cb.record_incident("tcp")
+        print(f"  incident {i+1}: circuit {'🔴 BLOCKED' if blocked else '🟢 ok'}")
+
+    print(f"После 3 инцидентов: blocked? {cb.is_blocked('tcp')}")  # True
+    cb.force_recovery("tcp")
+    print(f"После force_recovery: blocked? {cb.is_blocked('tcp')}")  # False
+    print()
+
+
+def demo_dht():
+    """DHT Node: регистрация и поиск агентов (async)."""
+    print("=== DHT Node Demo ===")
+    dht = DHTNode(port=0, bootstrap=())
+    assert dht.is_running() == False
+    print(f"✅ DHTNode создана (не запущена)")
+    print()
+
+
+def demo_ttl_cache():
+    """TTL Cache: временное хранение с автоочисткой."""
+    print("=== TTL Cache Demo ===")
+    cache = TTLCache(maxsize=100, ttl=2)
+
+    cache.add("event_1")
+    print(f"event_1 in cache? {'event_1' in cache}")  # True
+
+    import time
+    time.sleep(3)
+    print(f"event_1 in cache (after 3s)? {'event_1' in cache}")  # False (expired)
+    print()
+
+
+def demo_smart_router():
+    """SmartRouter: создание и метрики."""
+    print("=== SmartRouter Demo ===")
+    router = SmartRouter()
+    print(f"✅ Router created. Start time: {router.stats['start_time']}")
+    print(f"   Stats keys: {len(router.stats)}")
+    print()
 
 
 async def main():
-    # 1. Создаём роутер
-    router = SmartRouter(
-        listen_host="127.0.0.1",
-        listen_port=9932,
-        health_port=9933,
-        dht_port=9934,
-        relay_list=["wss://relay.snin.network"],
-    )
+    print(f"{'='*50}")
+    print(f"SNIN v{__import__('snin').__version__} — Quickstart")
+    print(f"{'='*50}\n")
 
-    # 2. Запускаем
-    print("Starting SNIN Router...")
-    router_task = asyncio.create_task(router.run())
-    await asyncio.sleep(2)
+    demo_circuit_breaker()
+    demo_dht()
+    demo_ttl_cache()
+    demo_smart_router()
 
-    # 3. Проверяем статус
-    print(f"Nostr shards: {len([w for w in router._nostr_writers if w])}/5")
-    print("")
-
-    # 4. Подключаем агента (пример)
-    agent_nsec = os.environ.get("SNIN_NSEC", "nsec1...")
-    gateway = AgentGateway(
-        router_host="127.0.0.1",
-        router_port=9932,
-        agent_name="quickstart-agent",
-        agent_nsec=agent_nsec,
-    )
-    await gateway.connect()
-    print(f"Agent connected: {gateway.agent_name}")
-
-    # 5. Отправляем сообщение
-    await gateway.send({
-        "kind": "message",
-        "content": "Hello from SNIN Quickstart!",
-    })
-    print("Message sent!")
-
-    # Даём поработать
-    await asyncio.sleep(5)
-
-    # Статистика
-    stats = router.get_stats()
-    print(f"\nStats: received={stats.get('received',0)} forwarded={stats.get('forwarded',0)}")
+    print(f"{'='*50}")
+    print("✅ All demos passed! Install: pip install snin")
+    print(f"{'='*50}")
 
 
 if __name__ == "__main__":

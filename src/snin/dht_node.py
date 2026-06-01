@@ -19,7 +19,11 @@ Redis схема:
   - dht:nodes → список node_id всех активных узлов
   - dht:bootstrap → адрес bootstrap ноды
 """
-import json, time, asyncio, hashlib, logging
+import json
+import time
+import asyncio
+import hashlib
+import logging
 from pathlib import Path
 
 logger = logging.getLogger("DHT")
@@ -85,7 +89,7 @@ class DHTNode:
                     )
                     logger.info(f"DHT bootstrapped to {self.bootstrap}")
                 except asyncio.TimeoutError:
-                    logger.warning(f"DHT bootstrap timeout (first node?)")
+                    logger.warning("DHT bootstrap timeout (first node?)")
                 except Exception as e:
                     logger.warning(f"DHT bootstrap error: {e}")
 
@@ -96,7 +100,7 @@ class DHTNode:
         # 3. Регистрация в Redis
         try:
             r = get_redis()
-            r.hset(f"dht:nodes", node_id, json.dumps({
+            r.hset("dht:nodes", node_id, json.dumps({
                 "ip": "127.0.0.1",
                 "port": self.port,
                 "agent_pubkey": self.agent_pubkey,
@@ -128,7 +132,7 @@ class DHTNode:
         # Redis (fast store)
         try:
             r = get_redis()
-            r.hset(f"dht:agents", pubkey, json.dumps(entry))
+            r.hset("dht:agents", pubkey, json.dumps(entry))
             # Без TTL на hash — cleanup забирает мёртвых по last_seen
             logger.info(f"✅ agent {pubkey[:16]} → Redis")
         except Exception as e:
@@ -150,7 +154,7 @@ class DHTNode:
         # 1. Redis (fast)
         try:
             r = get_redis()
-            data = r.hget(f"dht:agents", pubkey)
+            data = r.hget("dht:agents", pubkey)
             if data:
                 result = json.loads(data)
                 logger.info(f"🔍 DHT hit (Redis): {pubkey[:16]}")
@@ -190,7 +194,7 @@ class DHTNode:
         """Список всех зарегистрированных агентов."""
         try:
             r = get_redis()
-            agents = r.hgetall(f"dht:agents") or {}
+            agents = r.hgetall("dht:agents") or {}
             now = time.time()
             result = []
             for pubkey, data_json in agents.items():
@@ -211,7 +215,7 @@ class DHTNode:
         """Список всех DHT нод в сети."""
         try:
             r = get_redis()
-            nodes = r.hgetall(f"dht:nodes") or {}
+            nodes = r.hgetall("dht:nodes") or {}
             result = []
             for node_id, data_json in nodes.items():
                 try:
@@ -231,16 +235,16 @@ class DHTNode:
             await asyncio.sleep(30)
             try:
                 r = get_redis()
-                agents = r.hgetall(f"dht:agents") or {}
+                agents = r.hgetall("dht:agents") or {}
                 now = time.time()
                 for pubkey, data_json in agents.items():
                     try:
                         data = json.loads(data_json)
                         if now - data.get("last_seen", 0) > AGENT_TTL:
-                            r.hdel(f"dht:agents", pubkey)
+                            r.hdel("dht:agents", pubkey)
                             logger.info(f"🧹 DHT cleanup: {pubkey[:16]} expired")
                     except Exception:
-                        r.hdel(f"dht:agents", pubkey)
+                        r.hdel("dht:agents", pubkey)
             except Exception:
                 pass
 

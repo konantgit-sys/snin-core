@@ -29,7 +29,8 @@ import httpx
 RELAY_MESH = "http://localhost:9907"
 SMART_ROUTER_HOST = "127.0.0.1"
 SMART_ROUTER_PORT = 9932
-HEARTBEAT_LOG = "/home/agent/data/heartbeat.log"
+HEARTBEAT_LOG = os.environ.get("SNIN_HEARTBEAT_LOG",
+    os.path.expanduser("~/.snin/logs/heartbeat.log"))
 BATCH_WINDOW = 0.1  # сек — накопление batch (10 flushes/sec)
 LISTEN_HOST = "127.0.0.1"
 LISTEN_PORT = 9910
@@ -135,7 +136,7 @@ class RouteEngine:
             }) + "\n"
             with open(HEARTBEAT_LOG, "a") as f:
                 f.write(line)
-        except Exception as e:
+        except Exception:
             self.stats["errors"] += 1
 
     async def _send_immediate(self, event: dict):
