@@ -6,6 +6,11 @@ SNIN — многоуровневая сеть для связи AI-агенто
 13 уровней архитектуры: от физического канала до оркестрации агентов,
 с self-learning роутингом, circuit breaker-ами и децентрализованным DHT.
 
+[![PyPI](https://img.shields.io/pypi/v/snin)](https://pypi.org/project/snin/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-blue)](https://www.python.org/)
+[![CI](https://github.com/konantgit-sys/snin-core/actions/workflows/ci.yml/badge.svg)](https://github.com/konantgit-sys/snin-core/actions)
+[![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+
 ```bash
 pip install snin
 ```
