@@ -39,11 +39,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://snin-network.v2.site"
-Repository = "https://github.com/snin-network/snin-core"
-Documentation = "https://github.com/snin-network/snin-core"
-Changelog = "https://github.com/snin-network/snin-core/blob/main/CHANGELOG.md"
-Bug_Tracker = "https://github.com/snin-network/snin-core/issues"
+Repository = "https://github.com/konantgit-sys/snin-core"
+Documentation = "https://github.com/konantgit-sys/snin-core"
+Changelog = "https://github.com/konantgit-sys/snin-core/blob/main/CHANGELOG.md"
+Bug_Tracker = "https://github.com/konantgit-sys/snin-core/issues"
 
 [project.optional-dependencies]
 dev = [
