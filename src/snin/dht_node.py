@@ -68,6 +68,9 @@ class DHTNode:
         self.agent_meta = agent_meta or {"ip": "127.0.0.1", "tcp_port": 9932, "role": "router"}
         self.server = None
         self._running = False
+        # In-memory fallback store (для работы без Redis)
+        self._local_agents: dict[str, dict] = {}
+        self._local_initialized = False
 
     async def start(self):
         """Запустить DHT (Kademlia + Redis)."""
@@ -123,20 +126,23 @@ class DHTNode:
         logger.info("DHT stopped")
 
     async def register_agent(self, pubkey: str, data: dict, ttl: int = AGENT_TTL):
-        """Зарегистрировать агента (Redis + Kademlia)."""
+        """Зарегистрировать агента (In-memory + Redis + Kademlia)."""
         entry = {
             **data,
             "last_seen": time.time(),
         }
 
+        # In-memory (always)
+        self._local_agents[pubkey] = entry
+        self._local_initialized = True
+
         # Redis (fast store)
         try:
             r = get_redis()
             r.hset("dht:agents", pubkey, json.dumps(entry))
-            # Без TTL на hash — cleanup забирает мёртвых по last_seen
             logger.info(f"✅ agent {pubkey[:16]} → Redis")
-        except Exception as e:
-            logger.warning(f"DHT Redis store error: {e}")
+        except Exception:
+            pass  # Redis не доступен — живём на in-memory
 
         # Kademlia (P2P sync)
         if self.server and self._running:
@@ -144,34 +150,41 @@ class DHTNode:
                 key = f"agent:{pubkey}".encode()
                 value = json.dumps({**entry, "node_id": self.server.node.id.hex()}).encode()
                 await self.server.set(key, value)
-            except Exception as e:
-                logger.debug(f"DHT Kademlia set error: {e}")
+            except Exception:
+                pass
 
         return entry
 
     async def lookup_agent(self, pubkey: str) -> dict | None:
-        """Найти агента в DHT (Redis → Kademlia fallback)."""
-        # 1. Redis (fast)
+        """Найти агента в DHT (In-memory → Redis → Kademlia fallback)."""
+        # 1. In-memory (fastest)
+        if pubkey in self._local_agents:
+            return self._local_agents[pubkey]
+
+        # 2. Redis (fast)
         try:
             r = get_redis()
             data = r.hget("dht:agents", pubkey)
             if data:
                 result = json.loads(data)
+                self._local_agents[pubkey] = result  # кешируем
                 logger.info(f"🔍 DHT hit (Redis): {pubkey[:16]}")
                 return result
         except Exception:
             pass
 
-        # 2. Kademlia (P2P)
+        # 3. Kademlia (P2P)
         if self.server and self._running:
             try:
                 key = f"agent:{pubkey}".encode()
                 value = await self.server.get(key)
                 if value:
+                    result = json.loads(value.decode())
+                    self._local_agents[pubkey] = result  # кешируем
                     logger.info(f"🔍 DHT hit (Kademlia): {pubkey[:16]}")
-                    return json.loads(value.decode())
-            except Exception as e:
-                logger.debug(f"DHT Kademlia get error: {e}")
+                    return result
+            except Exception:
+                pass
 
         logger.info(f"🔍 DHT miss: {pubkey[:16]}")
         return None
@@ -191,13 +204,25 @@ class DHTNode:
             logger.info(f"🆕 create {pubkey[:16]} role={meta.get('role','?')}")
 
     async def list_agents(self) -> list[dict]:
-        """Список всех зарегистрированных агентов."""
+        """Список всех зарегистрированных агентов (In-memory + Redis)."""
+        now = time.time()
+        result = []
+
+        # 1. In-memory (always available)
+        for pubkey, data in self._local_agents.items():
+            entry = {**data, "pubkey": pubkey,
+                     "age_sec": int(now - data.get("last_seen", now)),
+                     "alive": True}
+            result.append(entry)
+
+        # 2. Redis (дополняем если есть)
         try:
             r = get_redis()
             agents = r.hgetall("dht:agents") or {}
-            now = time.time()
-            result = []
+            known_pubkeys = {e["pubkey"] for e in result}
             for pubkey, data_json in agents.items():
+                if pubkey in known_pubkeys:
+                    continue
                 try:
                     data = json.loads(data_json)
                     data["pubkey"] = pubkey
@@ -206,10 +231,10 @@ class DHTNode:
                     result.append(data)
                 except Exception:
                     pass
-            return sorted(result, key=lambda x: x.get("last_seen", 0), reverse=True)
-        except Exception as e:
-            logger.warning(f"DHT list error: {e}")
-            return []
+        except Exception:
+            pass
+
+        return sorted(result, key=lambda x: x.get("last_seen", 0), reverse=True)
 
     async def list_nodes(self) -> list[dict]:
         """Список всех DHT нод в сети."""
